@@ -1,0 +1,152 @@
+services:
+  # ============================================
+  # Mosquitto MQTT Broker
+  # ============================================
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./volumes/mosquitto/data:/mosquitto/data
+      - ./volumes/mosquitto/log:/mosquitto/log
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-t", "healthcheck", "-m", "ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - facial-network
+
+  # ============================================
+  # go2rtc - Multiplexador de Stream
+  # ============================================
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: go2rtc
+    restart: unless-stopped
+    ports:
+      - "1984:1984"
+      - "8554:8554"
+      - "8555:8555"
+    volumes:
+      - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1984/api/streams"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - facial-network
+
+  # ============================================
+  # Frigate - Detecção de Pessoas
+  # ============================================
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./frigate/config.yml:/config/config.yml:ro
+      - ./volumes/frigate:/media/frigate
+      - /etc/localtime:/etc/localtime:ro
+      # Aceleradores (descomente conforme seu hardware)
+      # - /dev/bus/usb:/dev/bus/usb  # Coral TPU USB
+      # - /dev/dri:/dev/dri          # GPU Intel
+    environment:
+      - FRIGATE_RTSP_PASSWORD=${CAMERA_PASSWORD}
+    env_file:
+      - .env
+    depends_on:
+      go2rtc:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - facial-network
+
+  # ============================================
+  # CompreFace - Reconhecimento Facial (all-in-one com PostgreSQL embutido)
+  # ============================================
+  compreface:
+    image: exadel/compreface:latest
+    container_name: compreface
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+    volumes:
+      - ./volumes/compreface:/data
+      - ./volumes/compreface-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - facial-network
+
+  # ============================================
+  # Occlusion Detector - Script Python
+  # ============================================
+  occlusion-detector:
+    build: ./occlusion-detector
+    container_name: occlusion-detector
+    restart: unless-stopped
+    environment:
+      FRIGATE_URL: http://frigate:5000
+      COMPREFACE_URL: http://compreface
+      COMPREFACE_API_KEY: ${COMPREFACE_API_KEY}
+      COMPREFACE_TIMEOUT: ${COMPREFACE_TIMEOUT:-30}
+      COMPREFACE_RETRIES: ${COMPREFACE_RETRIES:-2}
+      RECOGNITION_MIN_SIMILARITY: ${RECOGNITION_MIN_SIMILARITY:-0.75}
+      RECOGNITION_PREDICTION_COUNT: ${RECOGNITION_PREDICTION_COUNT:-3}
+      RECOGNITION_EVENT_TYPES: ${RECOGNITION_EVENT_TYPES:-end}
+      COMPREFACE_DETECT_FACES: ${COMPREFACE_DETECT_FACES:-false}
+      AUTO_REGISTER_UNKNOWN: ${AUTO_REGISTER_UNKNOWN:-false}
+      UNKNOWN_SUBJECT_PREFIX: ${UNKNOWN_SUBJECT_PREFIX:-unknown_auto_}
+      UNKNOWN_ONLY_ON_EVENT_TYPE: ${UNKNOWN_ONLY_ON_EVENT_TYPE:-end}
+      UNKNOWN_MIN_FACE_CONFIDENCE: ${UNKNOWN_MIN_FACE_CONFIDENCE:-0.80}
+      UNKNOWN_DET_PROB_THRESHOLD: ${UNKNOWN_DET_PROB_THRESHOLD:-0.80}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_TOPIC: frigate/events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./volumes/faces:/app/faces
+      - ./volumes/logs:/app/logs
+    env_file:
+      - .env
+    depends_on:
+      frigate:
+        condition: service_healthy
+      compreface:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    networks:
+      - facial-network
+
+# ============================================
+# Redes
+# ============================================
+networks:
+  facial-network:
+    driver: bridge
+    name: facial-network

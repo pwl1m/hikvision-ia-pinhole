@@ -1,0 +1,5 @@
+paho-mqtt==1.6.1
+requests==2.31.0
+opencv-python-headless==4.9.0.80
+mediapipe==0.10.7
+numpy==1.24.3

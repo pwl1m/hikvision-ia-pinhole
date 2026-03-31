@@ -1,0 +1,81 @@
+# Frigate NVR Configuration
+mqtt:
+  host: mosquitto
+  port: 1883
+  topic_prefix: frigate
+
+go2rtc:
+  streams:
+    camera_main: "rtsp://go2rtc:8554/main"
+    camera_sub: "rtsp://go2rtc:8554/sub"
+
+cameras:
+  entrada:
+    ffmpeg:
+      inputs:
+        - path: rtsp://go2rtc:8554/main
+          roles:
+            - detect
+            - record
+        - path: rtsp://go2rtc:8554/sub
+          roles:
+            - audio
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+      enabled: true
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          min_area: 5000
+          threshold: 0.7
+          mask: []
+    snapshots:
+      enabled: true
+      bounding_box: true
+      crop: true
+      retain:
+        default: 30
+    record:
+      enabled: true
+      motion:
+        days: 7
+      alerts:
+        retain:
+          days: 30
+          mode: motion
+      detections:
+        retain:
+          days: 30
+          mode: motion
+
+# Detectores (escolha conforme seu hardware)
+detectors:
+  # Para CPU apenas:
+  cpu:
+    type: cpu
+  # Para Coral TPU (USB):
+  # coral:
+  #   type: edgetpu
+  #   device: usb
+  # Para GPU Intel:
+  # openvino:
+  #   type: openvino
+  #   device: GPU
+
+# Modelo de detecção
+model:
+  width: 320
+  height: 320
+  input_tensor: nhwc
+
+# Snapshots globais
+snapshots:
+  enabled: true
+  retain:
+    default: 30
+
+

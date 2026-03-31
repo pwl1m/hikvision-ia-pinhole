@@ -1,0 +1,21 @@
+# go2rtc - Configuração do Multiplexador
+api:
+  listen: ":1984"
+
+streams:
+  main: "rtsp://usuario:senha@ip-da-camera:554/Streaming/Channels/101"
+  sub: "rtsp://usuario:senha@ip-da-camera:554/Streaming/Channels/102"
+
+webrtc:
+  listen: ":8555"
+  candidates:
+    - stun:stun.l.google.com:19302
+
+rtsp:
+  listen: ":8554"
+
+hls:
+  listen: ":8888"
+
+log:
+  level: info
