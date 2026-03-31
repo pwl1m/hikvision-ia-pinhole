@@ -143,6 +143,44 @@ services:
     networks:
       - facial-network
 
+  # ============================================
+  # Reviews Generator - Atualiza HTMLs automaticamente
+  # ============================================
+  reviews-generator:
+    image: python:3.11-slim
+    container_name: reviews-generator
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /workspace
+    command: ["python", "watch_reviews.py", "--frigate-base", "http://frigate:5000", "--compreface-base", "http://compreface"]
+    volumes:
+      - ./:/workspace
+    depends_on:
+      occlusion-detector:
+        condition: service_started
+    networks:
+      - facial-network
+
+  # ============================================
+  # Reviews Web - Site estatico dos reviews
+  # ============================================
+  reviews-web:
+    image: python:3.11-slim
+    container_name: reviews-web
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app/faces
+    command: ["python", "-m", "http.server", "8080", "--bind", "0.0.0.0"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./volumes/faces:/app/faces:ro
+    depends_on:
+      reviews-generator:
+        condition: service_started
+    networks:
+      - facial-network
+
 # ============================================
 # Redes
 # ============================================

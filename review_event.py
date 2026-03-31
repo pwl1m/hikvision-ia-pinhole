@@ -297,16 +297,56 @@ def reference_panel_html(subject: str | None, api_key: str | None, compreface_ba
     )
 
 
+def cache_clip(event_id: str, frigate_base: str, output_dir: Path) -> Path | None:
+    clip_dir = output_dir / "clips"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    target = clip_dir / f"{event_id}.mp4"
+    if target.exists():
+        return target
+
+    url = f"{frigate_base}/api/events/{event_id}/clip.mp4"
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            if response.status != 200:
+                return None
+            target.write_bytes(response.read())
+        return target
+    except (urllib.error.URLError, TimeoutError):
+        return None
+
+
+def summary_snapshot_html(report_path: Path, snapshot_path: str | None) -> str:
+    image_path = local_face_path(snapshot_path)
+    if image_path is None:
+        return "nao disponivel"
+    relative = relative_asset(report_path, image_path)
+    return f'<a href="../{html.escape(relative)}">abrir snapshot salvo</a>'
+
+
+def summary_clip_html(report_path: Path, clip_path: Path | None) -> str:
+    if clip_path is None:
+        return '<span class="muted">clip nao disponivel</span>'
+    relative = relative_asset(report_path, clip_path)
+    return f'<a href="../{html.escape(relative)}">abrir clip salvo</a>'
+
+
 def build_report(event_id: str, rows, output_dir: Path, frigate_base: str, compreface_base: str, api_key: str | None, min_similarity: float) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / f"{event_id}.html"
 
-    clip_url = f"{frigate_base}/api/events/{event_id}/clip.mp4"
-    snapshot_url = f"{frigate_base}/api/events/{event_id}/snapshot.jpg"
+    clip_path = cache_clip(event_id, frigate_base, output_dir)
+    clip_relative = relative_asset(report_path, clip_path) if clip_path is not None else None
 
     latest_row = rows[-1]
     latest_candidates = parse_candidates(latest_row["compreface_candidates"])
     summary_subject = latest_row["recognized_subject"] or (latest_candidates[0].get("subject") if latest_candidates else None)
+    summary_snapshot = summary_snapshot_html(report_path, latest_row["snapshot_path"])
+    summary_clip = summary_clip_html(report_path, clip_path)
+    video_html = (
+        f'<video controls src="../{html.escape(clip_relative)}"></video>'
+        if clip_relative is not None
+        else '<p class="muted">Clip do evento nao estava disponivel no Frigate no momento da geracao do review.</p>'
+    )
 
     attempts_html = []
     for row in rows:
@@ -452,13 +492,13 @@ def build_report(event_id: str, rows, output_dir: Path, frigate_base: str, compr
                         <p><strong>camera:</strong> {html.escape(display_value(latest_row['camera']))}</p>
                         <p><strong>event_type final:</strong> {html.escape(display_value(latest_row['event_type']))}</p>
                         <p><strong>subject final:</strong> {html.escape(display_value(summary_subject))}</p>
-                        <p><strong>snapshot do Frigate:</strong> <a href=\"{html.escape(snapshot_url)}\">abrir snapshot</a></p>
-                        <p><strong>clip do Frigate:</strong> <a href=\"{html.escape(clip_url)}\">abrir clip</a></p>
+                        <p><strong>snapshot salvo:</strong> {summary_snapshot}</p>
+                        <p><strong>clip salvo:</strong> {summary_clip}</p>
                     </div>
                 </div>
                 {summary_metrics(latest_row, latest_candidates, min_similarity)}
             </div>
-            <video controls src=\"{html.escape(clip_url)}\"></video>
+            {video_html}
         </section>
         {''.join(attempts_html)}
     </div>

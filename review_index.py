@@ -59,7 +59,7 @@ def maybe_image(path_value: str | None, output_dir: Path) -> str:
   image_path = Path(path_value.replace("/app/faces", "volumes/faces"))
   if not image_path.exists():
     return "<div class=\"thumb missing\">arquivo ausente</div>"
-  relative = image_path.relative_to(output_dir.parent.parent)
+  relative = image_path.relative_to(output_dir.parent)
   return f'<img class="thumb" src="../{relative}" alt="snapshot">'
 
 
